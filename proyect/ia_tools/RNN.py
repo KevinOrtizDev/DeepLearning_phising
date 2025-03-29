@@ -10,7 +10,8 @@ from helper.TextPreprocessingHelper import TextPreprocessingHelper
 # Cargar los datos y preprocesarlos
 vectorized_texts, labels = TextPreprocessingHelper.train_lstm_model('../datasets/phishing_email.csv')
 
-labels = labels.argmax(axis=1)
+# Convertir las etiquetas de formato one-hot a 0 o 1
+labels = labels.argmax(axis=1)  # Convertir etiquetas one-hot a 0 o 1
 
 # Convertir a numpy y luego a tensor
 vectorized_texts = vectorized_texts.numpy()
@@ -19,14 +20,14 @@ vectorized_texts = vectorized_texts.numpy()
 X_train, X_test, y_train, y_test = train_test_split(vectorized_texts, labels, test_size=0.2, random_state=42)
 
 # Convertir a tensores de PyTorch
-X_train = torch.tensor(X_train, dtype=torch.float32)
-X_test = torch.tensor(X_test, dtype=torch.float32)
+X_train = torch.tensor(X_train, dtype=torch.long)  # Usamos long para indices de palabras
+X_test = torch.tensor(X_test, dtype=torch.long)
 y_train = torch.tensor(y_train, dtype=torch.float32)
 y_test = torch.tensor(y_test, dtype=torch.float32)
 
-# Asegurarse de que los datos de entrada tengan la forma correcta para LSTM
-X_train = X_train.unsqueeze(-1)  # (batch_size, sequence_length, 1)
-X_test = X_test.unsqueeze(-1)    # (batch_size, sequence_length, 1)
+# Asegurarte de que las etiquetas estén en la forma correcta (N, 1)
+y_train = y_train.view(-1, 1)  # Redimensionar a (N, 1)
+y_test = y_test.view(-1, 1)
 
 # Crear DataLoader para manejo eficiente de batches
 train_data = TensorDataset(X_train, y_train)
@@ -35,27 +36,29 @@ test_data = TensorDataset(X_test, y_test)
 train_loader = DataLoader(train_data, batch_size=32, shuffle=True)
 test_loader = DataLoader(test_data, batch_size=32, shuffle=False)
 
-# Definir el modelo LSTM
-class LSTMModel(nn.Module):
-    def __init__(self, input_size, hidden_size, output_size):
-        super(LSTMModel, self).__init__()
-        self.lstm = nn.LSTM(input_size, hidden_size, batch_first=True)
+# Definir el modelo RNN
+class RNNModel(nn.Module):
+    def __init__(self, input_size, hidden_size, output_size, vocab_size, embedding_dim):
+        super(RNNModel, self).__init__()
+        self.embedding = nn.Embedding(vocab_size, embedding_dim)  # Embedding layer
+        self.rnn = nn.RNN(embedding_dim, hidden_size, batch_first=True)
         self.fc = nn.Linear(hidden_size, output_size)  # Solo una neurona de salida para clasificación binaria
     
     def forward(self, x):
-        # LSTM devuelve dos valores: output y (h_n, c_n)
-        lstm_out, _ = self.lstm(x)
-        out = self.fc(lstm_out[:, -1, :])  # Usar la última salida de la secuencia
+        x = self.embedding(x)  # Convertir indices de palabras en vectores de embedding
+        h0 = torch.zeros(1, x.size(0), hidden_size)  # Inicializar el estado oculto
+        out, _ = self.rnn(x, h0)
+        out = self.fc(out[:, -1, :])  # Usar la última salida de la secuencia
         return out
 
-# Inicializar el modelo
-input_size = 1  # Por ejemplo, cada valor en la secuencia tiene una sola característica
+# Parámetros
+vocab_size = 10000  # El tamaño de tu vocabulario (ajústalo si es necesario)
+embedding_dim = 128  # Tamaño del embedding de las palabras
 hidden_size = 64
-output_size = 1  # Para clasificación binaria
-model = LSTMModel(input_size, hidden_size, output_size)
+output_size = 1  # Para clasificación binaria (1 valor por ejemplo)
 
-y_train = y_train.view(-1, 1)  # Asegurando que las etiquetas estén en la forma correcta (N, 1)
-y_test = y_test.view(-1, 1)
+# Inicializar el modelo
+model = RNNModel(input_size=1, hidden_size=hidden_size, output_size=output_size, vocab_size=vocab_size, embedding_dim=embedding_dim)
 
 # Definir el optimizador y la función de pérdida
 optimizer = Adam(model.parameters(), lr=0.001)
@@ -94,6 +97,6 @@ with torch.no_grad():
         predicted = torch.round(torch.sigmoid(output))  # Para obtener 0 o 1 como salida
         total += labels.size(0)
         correct += (predicted.squeeze() == labels.squeeze()).sum().item()
-    
+
 accuracy = correct / total
 print(f"Precisión en los datos de prueba: {accuracy:.4f}")
