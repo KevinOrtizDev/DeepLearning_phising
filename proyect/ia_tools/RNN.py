@@ -20,7 +20,7 @@ vectorized_texts = vectorized_texts.numpy()
 X_train, X_test, y_train, y_test = train_test_split(vectorized_texts, labels, test_size=0.2, random_state=42)
 
 # Convertir a tensores de PyTorch
-X_train = torch.tensor(X_train, dtype=torch.long)  # Usamos long para indices de palabras
+X_train = torch.tensor(X_train, dtype=torch.long)  # Usamos long para índices de palabras
 X_test = torch.tensor(X_test, dtype=torch.long)
 y_train = torch.tensor(y_train, dtype=torch.float32)
 y_test = torch.tensor(y_test, dtype=torch.float32)
@@ -36,29 +36,46 @@ test_data = TensorDataset(X_test, y_test)
 train_loader = DataLoader(train_data, batch_size=32, shuffle=True)
 test_loader = DataLoader(test_data, batch_size=32, shuffle=False)
 
-# Definir el modelo RNN
-class RNNModel(nn.Module):
-    def __init__(self, input_size, hidden_size, output_size, vocab_size, embedding_dim):
-        super(RNNModel, self).__init__()
-        self.embedding = nn.Embedding(vocab_size, embedding_dim)  # Embedding layer
-        self.rnn = nn.RNN(embedding_dim, hidden_size, batch_first=True)
-        self.fc = nn.Linear(hidden_size, output_size)  # Solo una neurona de salida para clasificación binaria
-    
+# Definir el modelo RNN (LSTM)
+class RNNNet(nn.Module):
+    def __init__(self, vocab_size, embedding_dim, hidden_size, num_classes, num_layers=1):
+        super(RNNNet, self).__init__()
+        
+        # Capa de embedding
+        self.embedding = nn.Embedding(vocab_size, embedding_dim)
+        
+        # Capa LSTM
+        self.lstm = nn.LSTM(embedding_dim, hidden_size, num_layers, batch_first=True)
+        
+        # Capa de salida
+        self.fc = nn.Sequential(
+            nn.Linear(hidden_size, 128),
+            nn.ReLU(),
+            nn.Linear(128, num_classes)
+        )
+
     def forward(self, x):
-        x = self.embedding(x)  # Convertir indices de palabras en vectores de embedding
-        h0 = torch.zeros(1, x.size(0), hidden_size)  # Inicializar el estado oculto
-        out, _ = self.rnn(x, h0)
-        out = self.fc(out[:, -1, :])  # Usar la última salida de la secuencia
+        # Embedding de la entrada (transformar índices de palabras en vectores)
+        x = self.embedding(x)
+        
+        # Pasar la entrada a través de la capa LSTM
+        lstm_out, (hn, cn) = self.lstm(x)
+        
+        # Tomamos la última salida del LSTM (correspondiente a la última secuencia)
+        out = lstm_out[:, -1, :]
+        
+        # Pasar la salida a través de la capa completamente conectada
+        out = self.fc(out)
         return out
 
 # Parámetros
 vocab_size = 10000  # El tamaño de tu vocabulario (ajústalo si es necesario)
 embedding_dim = 128  # Tamaño del embedding de las palabras
-hidden_size = 64
-output_size = 1  # Para clasificación binaria (1 valor por ejemplo)
+hidden_size = 64     # Número de unidades en el estado oculto de la LSTM
+output_size = 1      # Para clasificación binaria (1 valor por ejemplo)
 
 # Inicializar el modelo
-model = RNNModel(input_size=1, hidden_size=hidden_size, output_size=output_size, vocab_size=vocab_size, embedding_dim=embedding_dim)
+model = RNNNet(vocab_size=vocab_size, embedding_dim=embedding_dim, hidden_size=hidden_size, num_classes=output_size)
 
 # Definir el optimizador y la función de pérdida
 optimizer = Adam(model.parameters(), lr=0.001)
