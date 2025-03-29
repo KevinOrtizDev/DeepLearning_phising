@@ -117,3 +117,5 @@ with torch.no_grad():
 
 accuracy = correct / total
 print(f"Precisión en los datos de prueba: {accuracy:.4f}")
+
+torch.save(model, 'rnn_model.pth')
